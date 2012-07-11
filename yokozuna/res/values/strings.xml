@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">Xot</string>
+	<string name="title_main_menu">X-O-T</string>
+    <string name="button_start">Start</string>
+    <string name="loading_xot">Loading X-O-T...</string>
+    
+</resources>

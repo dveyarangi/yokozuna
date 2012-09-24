@@ -1,7 +1,6 @@
 package zaki.yokozuna;
 
 import org.andengine.entity.Entity;
-import org.andengine.entity.IEntity;
 import org.andengine.entity.sprite.Sprite;
 
 import com.badlogic.gdx.physics.box2d.Body;
@@ -9,16 +8,26 @@ import com.badlogic.gdx.physics.box2d.Body;
 public class Yokozuna extends Entity
 {
 	
-	private Body body;
-	private Sprite shape;
+	public static final float CHARGE_FORCE = 1000; 
 	
-	public Yokozuna(Body body, Sprite shape)
+	private Body bellyBody;
+	private Body [] bodies;
+	private Sprite shape;
+
+	
+	public Yokozuna(Body bellyBody, Body leftBody, Body rightBody, Sprite shape)
 	{
-		this.body = body;
+		this.bellyBody = bellyBody;
+		this.bodies = new Body [2];
+		bodies[0] = leftBody;
+		bodies[1] = rightBody;
 		this.shape = shape;
 	}
 	
-	public Body getBody() { return body; }
+	
+	
+	public Body getBelly() { return bellyBody; }
+	public Body [] getBodies() { return bodies; }
 	
 	public Sprite getSprite() { return shape; }
 

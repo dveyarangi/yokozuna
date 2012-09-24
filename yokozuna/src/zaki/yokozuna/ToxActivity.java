@@ -1,9 +1,13 @@
 package zaki.yokozuna;
 
+import static org.andengine.extension.physics.box2d.util.constants.PhysicsConstants.PIXEL_TO_METER_RATIO_DEFAULT;
+
 import org.andengine.engine.camera.Camera;
+import org.andengine.engine.handler.IUpdateHandler;
 import org.andengine.engine.options.EngineOptions;
 import org.andengine.engine.options.ScreenOrientation;
 import org.andengine.engine.options.resolutionpolicy.RatioResolutionPolicy;
+import org.andengine.entity.primitive.Line;
 import org.andengine.entity.primitive.Rectangle;
 import org.andengine.entity.scene.IOnSceneTouchListener;
 import org.andengine.entity.scene.Scene;
@@ -11,25 +15,23 @@ import org.andengine.entity.scene.background.Background;
 import org.andengine.entity.util.FPSLogger;
 import org.andengine.extension.physics.box2d.PhysicsFactory;
 import org.andengine.extension.physics.box2d.PhysicsWorld;
-import org.andengine.extension.physics.box2d.util.Vector2Pool;
 import org.andengine.input.sensor.acceleration.AccelerationData;
 import org.andengine.input.sensor.acceleration.IAccelerationListener;
 import org.andengine.input.touch.TouchEvent;
-import org.andengine.opengl.texture.atlas.bitmap.BitmapTextureAtlas;
+import org.andengine.input.touch.controller.MultiTouchController;
 import org.andengine.opengl.texture.region.ITiledTextureRegion;
 import org.andengine.opengl.vbo.VertexBufferObjectManager;
 import org.andengine.ui.activity.SimpleBaseGameActivity;
-import org.andengine.util.debug.Debug;
 
-import android.hardware.SensorManager;
-import android.widget.Toast;
+import zaki.yokozuna.controls.AnalogOnScreenControl;
+import zaki.yokozuna.controls.AnalogOnScreenControl.IAnalogOnScreenControlListener;
+import zaki.yokozuna.controls.BaseOnScreenControl;
+import android.view.Display;
 
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.physics.box2d.Body;
-import com.badlogic.gdx.physics.box2d.PolygonShape;
 import com.badlogic.gdx.physics.box2d.BodyDef.BodyType;
 import com.badlogic.gdx.physics.box2d.FixtureDef;
-import static org.andengine.extension.physics.box2d.util.constants.PhysicsConstants.PIXEL_TO_METER_RATIO_DEFAULT;
 
 /**
  * (c) 2010 Nicolas Gramlich
@@ -43,17 +45,6 @@ public class ToxActivity extends SimpleBaseGameActivity implements IAcceleration
 	// Constants
 	// ===========================================================
 
-	protected static final int CAMERA_HEIGHT = 720;
-	protected static final int CAMERA_WIDTH = 480;
-	
-	private static final FixtureDef FIXTURE_DEF = PhysicsFactory.createFixtureDef(1, 0.5f, 0.5f);
-
-	// ===========================================================
-	// Fields
-	// ===========================================================
-
-	private BitmapTextureAtlas mBitmapTextureAtlas;
-
 	private Scene mScene;
 
 	protected ITiledTextureRegion mBrickTextureRegion1;
@@ -65,7 +56,19 @@ public class ToxActivity extends SimpleBaseGameActivity implements IAcceleration
 	private ToxFactory factory = new ToxFactory();
 	
 	private Yokozuna myYokozuna;
+	private StupidHumanControl myControl;
+	
+	private Line leftChargeLine;
+	private Line rightChargeLine;
+	
+	private AnalogOnScreenControl leftControl, rightControl;
+	
 	private Yokozuna hisYokozuna;
+	private IControlStrategy hisControl;
+	
+	int cameraWidth, cameraHeight;
+	Camera mCamera = null;
+	
 
 	// ===========================================================
 	// Constructors
@@ -82,10 +85,12 @@ public class ToxActivity extends SimpleBaseGameActivity implements IAcceleration
 	@Override
 	public EngineOptions onCreateEngineOptions() {
 //		Toast.makeText(this, "Touch the screen to add objects.", Toast.LENGTH_LONG).show();
+		final Display display = getWindowManager().getDefaultDisplay();
+	    cameraWidth = display.getWidth();
+	    cameraHeight = display.getHeight();
+		mCamera = new Camera(0, 0, cameraWidth, cameraHeight);
 
-		final Camera camera = new Camera(0, 0, CAMERA_WIDTH, CAMERA_HEIGHT);
-
-		return new EngineOptions(true, ScreenOrientation.PORTRAIT_FIXED, new RatioResolutionPolicy(CAMERA_WIDTH, CAMERA_HEIGHT), camera);
+		return new EngineOptions(true, ScreenOrientation.PORTRAIT_FIXED, new RatioResolutionPolicy(cameraWidth, cameraHeight), mCamera);
 	}
 
 	@Override
@@ -97,6 +102,8 @@ public class ToxActivity extends SimpleBaseGameActivity implements IAcceleration
 	@Override
 	public Scene onCreateScene() {
 		this.mEngine.registerUpdateHandler(new FPSLogger());
+		
+		mEngine.setTouchController(new MultiTouchController());
 
 		this.mScene = new Scene();
 		this.mScene.setBackground(new Background(0, 0, 0));
@@ -105,7 +112,7 @@ public class ToxActivity extends SimpleBaseGameActivity implements IAcceleration
 		this.mPhysicsWorld = new PhysicsWorld(new Vector2(0, 0), true);
 
 		final VertexBufferObjectManager vertexBufferObjectManager = this.getVertexBufferObjectManager();
-		float RING_RADIUS = Math.min( CAMERA_WIDTH, CAMERA_HEIGHT );
+		float RING_RADIUS = Math.min( cameraWidth, cameraHeight );
 		float wallx = RING_RADIUS, wally = 0;
 		float wallStep = (float)(Math.PI/10.);
 		 
@@ -113,8 +120,8 @@ public class ToxActivity extends SimpleBaseGameActivity implements IAcceleration
 /*		int cornersNum = (int)(2*Math.PI/wallStep);
 		Vector2 [] wallCorners = new Vector2 [2];
 		for(float a = 0; a < 2*Math.PI; a += wallStep) {
-			float nextWallx = (float)(RING_RADIUS * Math.cos( a )) + CAMERA_WIDTH/2;
-			float nextWally = (float)(RING_RADIUS * Math.sin( a )) + CAMERA_HEIGHT/2;
+			float nextWallx = (float)(RING_RADIUS * Math.cos( a )) + cameraWidth/2;
+			float nextWally = (float)(RING_RADIUS * Math.sin( a )) + cameraHeight/2;
 			wallCorners[0] = Vector2Pool.obtain(nextWallx, nextWally);
 			wallCorners[1] = Vector2Pool.obtain(wallx, wally);
 			PolygonShape wall = new PolygonShape();
@@ -125,10 +132,10 @@ public class ToxActivity extends SimpleBaseGameActivity implements IAcceleration
 			
 			
 		}*/
-		final Rectangle ground = new Rectangle(0, CAMERA_HEIGHT - 2, CAMERA_WIDTH, 2, vertexBufferObjectManager);
-		final Rectangle roof = new Rectangle(0, 0, CAMERA_WIDTH, 2, vertexBufferObjectManager);
-		final Rectangle left = new Rectangle(0, 0, 2, CAMERA_HEIGHT, vertexBufferObjectManager);
-		final Rectangle right = new Rectangle(CAMERA_WIDTH - 2, 0, 2, CAMERA_HEIGHT, vertexBufferObjectManager);
+		final Rectangle ground = new Rectangle(0, cameraHeight - 200, cameraWidth,                  2, vertexBufferObjectManager);
+		final Rectangle roof   = new Rectangle(0,                200, cameraWidth,                  2, vertexBufferObjectManager);
+		final Rectangle left   = new Rectangle(0,                200,           2, cameraHeight - 400, vertexBufferObjectManager);
+		final Rectangle right  = new Rectangle(cameraWidth-2,    200,           2, cameraHeight - 400, vertexBufferObjectManager);
 
 		PhysicsFactory.createBoxBody(this.mPhysicsWorld, ground, BodyType.StaticBody, wallFixtureDef);
 		PhysicsFactory.createBoxBody(this.mPhysicsWorld, roof, BodyType.StaticBody, wallFixtureDef);
@@ -142,32 +149,96 @@ public class ToxActivity extends SimpleBaseGameActivity implements IAcceleration
 
 		this.mScene.registerUpdateHandler(this.mPhysicsWorld);
 		
-		myYokozuna = factory.createYokozuna( CAMERA_WIDTH/2-50, CAMERA_HEIGHT/2,  3);
+		myYokozuna = factory.createYokozuna( cameraWidth/2-50, cameraHeight/2,  3);
+		myControl = new StupidHumanControl(myYokozuna);
+		myYokozuna.registerUpdateHandler(myControl);
+		myYokozuna.setIgnoreUpdate(false);
+		mScene.attachChild( myYokozuna );
 		
-		hisYokozuna = factory.createYokozuna( CAMERA_WIDTH/2+50, CAMERA_HEIGHT/2, 7);
+		Vector2 leftArm = myYokozuna.getBodies()[0].getWorldCenter();
+		leftChargeLine = new Line( leftArm.x, leftArm.y, leftArm.x, leftArm.y, vertexBufferObjectManager );
+		Vector2 rightArm = myYokozuna.getBodies()[1].getWorldCenter();
+		rightChargeLine = new Line( rightArm.x, rightArm.y, rightArm.x, rightArm.y, vertexBufferObjectManager );
+		
+		mScene.attachChild( leftChargeLine );
+		mScene.attachChild( rightChargeLine );
+		
+		
+		mScene.registerUpdateHandler(new IUpdateHandler() {
 
+			@Override
+			public void onUpdate(float pSecondsElapsed)
+			{
+				Vector2 leftArm = myYokozuna.getBodies()[0].getWorldCenter();
+				leftChargeLine.setPosition( leftArm.x * PIXEL_TO_METER_RATIO_DEFAULT, leftArm.y * PIXEL_TO_METER_RATIO_DEFAULT, 
+						(leftArm.x + myControl.getLeftChargeVector().x*0.005f) * PIXEL_TO_METER_RATIO_DEFAULT, 
+						(leftArm.y + myControl.getLeftChargeVector().y*0.005f) * PIXEL_TO_METER_RATIO_DEFAULT);
+				Vector2 rightArm = myYokozuna.getBodies()[1].getWorldCenter();
+				rightChargeLine.setPosition( rightArm.x * PIXEL_TO_METER_RATIO_DEFAULT, rightArm.y * PIXEL_TO_METER_RATIO_DEFAULT, 
+						(rightArm.x + myControl.getRightChargeVector().x*0.005f) * PIXEL_TO_METER_RATIO_DEFAULT, 
+						(rightArm.y + myControl.getRightChargeVector().y*0.005f) * PIXEL_TO_METER_RATIO_DEFAULT);
+				}
+
+			@Override
+			public void reset()
+			{
+				// TODO Auto-generated method stub
+				
+			}
+			
+		});
+		
+		hisYokozuna = factory.createYokozuna( cameraWidth/2+50, cameraHeight/2, 7);
+		hisControl = new StupidComputerControl(hisYokozuna, myYokozuna);
+		hisYokozuna.registerUpdateHandler(hisControl);
+		hisYokozuna.setIgnoreUpdate(false);
+		mScene.attachChild( hisYokozuna );
+		
+		leftControl = factory.createControl( 50, 50, new IAnalogOnScreenControlListener (){
+			@Override
+			public void onControlChange(BaseOnScreenControl pBaseOnScreenControl, float pValueX, float pValueY)
+			{
+				myControl.leftControlUpdate(pBaseOnScreenControl, pValueX, pValueY );
+		}
+
+			@Override
+			public void onControlClick(AnalogOnScreenControl pAnalogOnScreenControl)
+			{
+				// TODO Auto-generated method stub
+				
+			}});
+		mScene.attachChild( leftControl );
+		
+		rightControl = factory.createControl( 50, cameraHeight - 150, new IAnalogOnScreenControlListener (){
+			@Override
+			public void onControlChange(BaseOnScreenControl pBaseOnScreenControl, float pValueX, float pValueY)
+			{
+				myControl.rightControlUpdate(pBaseOnScreenControl, pValueX, pValueY );
+				}
+
+			@Override
+			public void onControlClick(AnalogOnScreenControl pAnalogOnScreenControl)
+			{
+				// TODO Auto-generated method stub
+				
+			}} );
+		mScene.attachChild( rightControl );
+		
+		
 //		factory.attachRotatingBrick( 120, 150 );
 //		factory.attachRotatingBrick( 150, 250 );
 //		factory.attachBucket( 150, 350 );
 
 		return this.mScene;
 	}
-	
-	public static final float CHARGE_FORCE = 200; 
 
 	@Override
 	public boolean onSceneTouchEvent(final Scene pScene, final TouchEvent pSceneTouchEvent) {
 		if(this.mPhysicsWorld != null) {
 			if(pSceneTouchEvent.isActionDown()) {
 //				this.addFace(pSceneTouchEvent.getX(), pSceneTouchEvent.getY());
-				Body fatBody = myYokozuna.getBody();
-				Vector2 chargeVec = Vector2Pool.obtain( 
-						pSceneTouchEvent.getX()/PIXEL_TO_METER_RATIO_DEFAULT - fatBody.getPosition().x, 
-						pSceneTouchEvent.getY()/PIXEL_TO_METER_RATIO_DEFAULT - fatBody.getPosition().y );
-				chargeVec.mul( CHARGE_FORCE / chargeVec.len());
-				fatBody.applyForce( chargeVec, fatBody.getPosition() );
-				Vector2Pool.recycle( chargeVec );
-				Debug.d( "touch: " + pSceneTouchEvent.getX() + "," + pSceneTouchEvent.getY() + "; yokozuna: " + fatBody.getPosition() + "; charge: " + chargeVec);
+				leftControl.onSceneTouchEvent( pScene, pSceneTouchEvent );
+				rightControl.onSceneTouchEvent( pScene, pSceneTouchEvent );
 				return true;
 			}
 		}
@@ -181,9 +252,9 @@ public class ToxActivity extends SimpleBaseGameActivity implements IAcceleration
 
 	@Override
 	public void onAccelerationChanged(final AccelerationData pAccelerationData) {
-		myYokozuna.getBody().applyForce( 
+		myYokozuna.getBelly().applyForce( 
 				pAccelerationData.getX(), pAccelerationData.getY(), // force
-				myYokozuna.getBody().getPosition().x, myYokozuna.getBody().getPosition().y // point
+				myYokozuna.getBelly().getPosition().x, myYokozuna.getBelly().getPosition().y // point
 			);
 	}
 

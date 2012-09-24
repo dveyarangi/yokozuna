@@ -8,14 +8,21 @@ import org.andengine.entity.sprite.Sprite;
 import org.andengine.extension.physics.box2d.PhysicsConnector;
 import org.andengine.extension.physics.box2d.PhysicsFactory;
 import org.andengine.extension.physics.box2d.PhysicsWorld;
+import org.andengine.extension.physics.box2d.util.Vector2Pool;
+import org.andengine.opengl.texture.TextureOptions;
+import org.andengine.opengl.texture.atlas.bitmap.BitmapTextureAtlas;
+import org.andengine.opengl.texture.atlas.bitmap.BitmapTextureAtlasTextureRegionFactory;
 import org.andengine.opengl.texture.region.ITextureRegion;
 import org.andengine.opengl.vbo.VertexBufferObjectManager;
 import org.andengine.util.Constants;
 import org.andengine.util.debug.Debug;
 import org.andengine.util.math.MathUtils;
 
+import zaki.yokozuna.controls.AnalogOnScreenControl;
+import zaki.yokozuna.controls.AnalogOnScreenControl.IAnalogOnScreenControlListener;
 import zaki.yokozuna.texture.TextureException;
 import zaki.yokozuna.texture.TextureManager;
+import android.opengl.GLES20;
 
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.physics.box2d.Body;
@@ -36,7 +43,7 @@ public class ToxFactory
 	
 	final static FixtureDef BRICK_FIXTURE_DER = PhysicsFactory.createFixtureDef(10, 0.2f, 0.9f);
 	final static FixtureDef BALL_FIXTURE_DER = PhysicsFactory.createFixtureDef(20, 0.5f, 0.5f);
-	final static FixtureDef YOKOZUNA_FIXTURE_DER = PhysicsFactory.createFixtureDef(1, 0.5f, 0.5f);
+	final static FixtureDef YOKOZUNA_FIXTURE_DER = PhysicsFactory.createFixtureDef(1, 0.5f, 10f);
 	
 	
 	final static String [] BALL_TEXTURES = new String [] {
@@ -67,6 +74,8 @@ public class ToxFactory
 		
 		textureManager.addTexture( "brick1", "gfx/brickline1.png" );
 		textureManager.addTexture( "bucket1", "gfx/bucket1.png" );
+		textureManager.addTexture( "onscreen_control_base", "gfx/onscreen_control_base.png" );
+		textureManager.addTexture( "onscreen_control_knob", "gfx/onscreen_control_knob.png" );
 		
 		for(String ballName : BALL_TEXTURES)
 		{
@@ -83,7 +92,7 @@ public class ToxFactory
 	public Sprite createSprite(final float x, final float y, float width, float height, final ITextureRegion textureRegion) 
 	{
 		
-		return new Sprite(x, y, width, height, textureRegion, vertexManager);
+		return new Sprite(x-width/2, y-height/2, width, height, textureRegion, vertexManager);
 	}
 	
 	public void attachRotatingBrick(final float x, final float y)
@@ -150,10 +159,15 @@ public class ToxFactory
 
 	}
 	
-	public static final int FATNESS = 50;
+	public static final int FATNESS = 100;
+	
+	private static final float SPAN = 10;
 	
 	public Yokozuna createYokozuna (final float x, final float y, int color) 
 	{
+		
+		Vector2 center = Vector2Pool.obtain( x, y );
+		
 		ITextureRegion region;
 		try
 		{
@@ -164,17 +178,51 @@ public class ToxFactory
 			return null;
 		}			
 		
-		Sprite ballShape = createSprite( x, y, FATNESS, FATNESS, region);
+//		Sprite ballShape = createSprite( x, y, FATNESS, FATNESS, region);
 		
 		ballsCount ++;
 		
-		final Body ballBody = createCircleBody( activity.getPhysics(), ballShape, BodyType.DynamicBody, YOKOZUNA_FIXTURE_DER );
-		activity.getPhysics().registerPhysicsConnector(new PhysicsConnector(ballShape, ballBody, true, true));
-
-		activity.getScene().attachChild(ballShape);
+		Sprite bellyShape = createSprite( x, y, FATNESS, FATNESS, region);
+		final Body bellyBody = ToxFactory.createCircleBody( activity.getPhysics(), bellyShape, BodyType.DynamicBody, BRICK_FIXTURE_DER);
+		bellyBody.setLinearDamping( 1f );
+		bellyBody.setAngularDamping( 1f );
+		activity.getPhysics().registerPhysicsConnector(new PhysicsConnector(bellyShape, bellyBody, true, true));
+		
+		
+		Sprite leftArmShape = createSprite( x-FATNESS/2, y, FATNESS/2, FATNESS/2, region );
+		final Body leftArmBody = ToxFactory.createCircleBody( activity.getPhysics(), leftArmShape, BodyType.DynamicBody, BRICK_FIXTURE_DER);
+		activity.getPhysics().registerPhysicsConnector(new PhysicsConnector(leftArmShape, leftArmBody, true, true));
+		
+		Sprite rightArmShape = createSprite( x+FATNESS/2, y, FATNESS/2, FATNESS/2,region );
+		final Body rightArmBody = ToxFactory.createCircleBody( activity.getPhysics(), rightArmShape, BodyType.DynamicBody, BRICK_FIXTURE_DER);
+		activity.getPhysics().registerPhysicsConnector(new PhysicsConnector(rightArmShape, rightArmBody, true, true));
+		
+		
+//		IAreaShape anchorShape = new Rectangle(movingShape.getX(), movingShape.getY()-movingShape.getHeight()/2,1,1, vertexManager);
+//		final Body anchorBody = PhysicsFactory.createBoxBody(activity.getPhysics(), anchorShape, BodyType.StaticBody, BRICK_FIXTURE_DER);
+		
 
 		
-		return new Yokozuna(ballBody, ballShape);
+//		activity.getPhysics().registerPhysicsConnector(new PhysicsConnector(movingShape, movingBody, true, true));
+		final RevoluteJointDef rightArmJoint = new RevoluteJointDef();
+		rightArmJoint.initialize(bellyBody, rightArmBody, rightArmBody.getWorldCenter());
+		activity.getPhysics().createJoint(rightArmJoint);
+		final RevoluteJointDef leftArmJoint = new RevoluteJointDef();
+		leftArmJoint.initialize(bellyBody, leftArmBody, leftArmBody.getWorldCenter());
+		activity.getPhysics().createJoint(leftArmJoint);
+//		revoluteJointDef.enableMotor = false;
+//		revoluteJointDef.motorSpeed = 0.5f;
+//		revoluteJointDef.maxMotorTorque = 2000;
+
+
+		Vector2Pool.recycle( center );
+		
+		Yokozuna entity = new Yokozuna(bellyBody, leftArmBody, rightArmBody, bellyShape);
+		entity.attachChild(bellyShape);
+		entity.attachChild(leftArmShape);
+		entity.attachChild(rightArmShape);
+		
+		return entity;
 
 	}
 	
@@ -317,6 +365,23 @@ public class ToxFactory
 		boxBody.setTransform(boxBody.getWorldCenter(), MathUtils.degToRad(pRotation));
 
 		return boxBody;
+	}
+
+	public AnalogOnScreenControl createControl(int x, int y, IAnalogOnScreenControlListener listener)
+	{
+		BitmapTextureAtlas mOnScreenControlTexture = new BitmapTextureAtlas(activity.getTextureManager(), 256, 128, TextureOptions.BILINEAR);
+		ITextureRegion baseTextureRegion = BitmapTextureAtlasTextureRegionFactory.createFromAsset(mOnScreenControlTexture, activity, "gfx/onscreen_control_base.png", 0, 0);
+		ITextureRegion knobTextureRegion = BitmapTextureAtlasTextureRegionFactory.createFromAsset(mOnScreenControlTexture, activity, "gfx/onscreen_control_knob.png", 128, 0);
+		mOnScreenControlTexture.load();
+
+		
+	/* The On-Screen Controls to control the direction of the snake. */
+		AnalogOnScreenControl control = new AnalogOnScreenControl(activity.getScene(), x, y, baseTextureRegion, knobTextureRegion, 0.1f, activity.getVertexBufferObjectManager(), listener);
+		/* Make the controls semi-transparent. */
+		control.getControlBase().setBlendFunction(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
+		control.getControlBase().setAlpha(0.5f);
+
+		return control;
 	}
 
 }
